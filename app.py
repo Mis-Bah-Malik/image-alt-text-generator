@@ -1,10 +1,6 @@
 import streamlit as st
-import torch
-from transformers import VisionEncoderDecoderModel, ViTImageProcessor, AutoTokenizer
 from PIL import Image
-import io
-import base64
-from pathlib import Path
+from transformers import pipeline
 
 # Streamlit page configuration
 st.set_page_config(
@@ -15,38 +11,12 @@ st.set_page_config(
 
 @st.cache_resource
 def load_model():
-    """Load the model and tokenizer with caching"""
+    """Load the image captioning pipeline"""
     try:
-        model = VisionEncoderDecoderModel.from_pretrained("nlpconnect/vit-gpt2-image-captioning")
-        feature_extractor = ViTImageProcessor.from_pretrained("nlpconnect/vit-gpt2-image-captioning")
-        tokenizer = AutoTokenizer.from_pretrained("nlpconnect/vit-gpt2-image-captioning")
-        return model, feature_extractor, tokenizer
+        caption_pipeline = pipeline("image-to-text", model="Salesforce/blip-image-captioning-base")
+        return caption_pipeline
     except Exception as e:
         st.error(f"Error loading model: {str(e)}")
-        return None, None, None
-
-def generate_alt_text(image, model, feature_extractor, tokenizer, max_length=30, num_beams=4):
-    """Generate alt text for an image"""
-    try:
-        if isinstance(image, str):
-            image = Image.open(image)
-        
-        # Prepare image
-        pixel_values = feature_extractor(image, return_tensors="pt").pixel_values
-        
-        # Generate caption
-        output_ids = model.generate(
-            pixel_values,
-            num_beams=num_beams,
-            max_length=max_length,
-            num_return_sequences=1
-        )
-        
-        # Decode caption
-        caption = tokenizer.decode(output_ids[0], skip_special_tokens=True)
-        return caption
-    except Exception as e:
-        st.error(f"Error generating alt text: {str(e)}")
         return None
 
 def main():
@@ -58,9 +28,9 @@ def main():
     
     # Load model
     with st.spinner('Loading AI model...'):
-        model, feature_extractor, tokenizer = load_model()
+        caption_model = load_model()
     
-    if model is None:
+    if caption_model is None:
         st.error("Failed to load the model. Please try again later.")
         return
     
@@ -78,20 +48,18 @@ def main():
             
             # Generate alt text
             with st.spinner('Generating alt text...'):
-                alt_text = generate_alt_text(
-                    image,
-                    model,
-                    feature_extractor,
-                    tokenizer
-                )
+                result = caption_model(image)
+                alt_text = result[0]['generated_text']
             
-            if alt_text:
-                st.markdown("### Generated Alt Text:")
-                st.write(alt_text)
-                
-                # Copy button
-                st.code(f'<img src="{uploaded_file.name}" alt="{alt_text}" />', language='html')
-                
+            # Display results
+            st.markdown("### Generated Alt Text:")
+            st.write(alt_text)
+            
+            # Show HTML code
+            st.markdown("### HTML Code:")
+            html_code = f'<img src="{uploaded_file.name}" alt="{alt_text}" />'
+            st.code(html_code, language='html')
+            
         except Exception as e:
             st.error(f"Error processing image: {str(e)}")
 
